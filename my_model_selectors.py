@@ -95,7 +95,6 @@ class SelectorDIC(ModelSelector):
         # TODO implement model selection based on DIC scores
         raise NotImplementedError
 
-
 class SelectorCV(ModelSelector):
     ''' select best model based on average log Likelihood of cross-validation folds
 
@@ -105,4 +104,31 @@ class SelectorCV(ModelSelector):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
         # TODO implement model selection using CV
-        raise NotImplementedError
+        max_components = min(len(min(self.sequences, key=len)),self.max_n_components)
+        print("Train {} has {} splits max {}".format(self.this_word, len(self.sequences), max_components))
+        best_logL = float("-inf")
+        for num_components in (self.min_n_components, max_components):
+            logL = 0
+            if len(self.sequences) == 1:
+                try:
+                    model = GaussianHMM(n_components=num_components, covariance_type="diag", n_iter=1000,
+                                        random_state=self.random_state, verbose=False).fit(self.X, self.lengths)
+                    logL = model.score(self.X, self.lengths)
+                except ValueError:
+                    logL = float("-inf")
+            else:
+                split_method = KFold(n_splits=min(3, len(self.sequences)))
+                for train_idx, test_idx in split_method.split(self.sequences):
+                    try:
+                        # print("Train fold indices:{} Test fold indices:{} for {}".format(cv_train_idx, cv_test_idx, self.this_word))
+                        train_X, train_lengths = combine_sequences(train_idx, self.sequences)
+                        model = GaussianHMM(n_components=num_components, covariance_type="diag", n_iter=1000,
+                                                random_state=self.random_state, verbose=False).fit(train_X, train_lengths)
+                        test_X, test_lengths = combine_sequences(test_idx, self.sequences)
+                        logL = logL + model.score(test_X, test_lengths)
+                    except ValueError:
+                        logL = float("-inf")
+            if logL > best_logL:
+                best_logL = logL
+                best_model = model
+        return best_model
