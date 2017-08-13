@@ -75,9 +75,25 @@ class SelectorBIC(ModelSelector):
         :return: GaussianHMM object
         """
         warnings.filterwarnings("ignore", category=DeprecationWarning)
-
         # TODO implement model selection based on BIC scores
-        raise NotImplementedError
+        #max_components = min(len(min(self.sequences, key=len)),self.max_n_components)
+        print("BIC train {} has {} sequences".format(self.this_word, len(self.sequences)))
+        best_bic = float("inf")
+        for num_components in range(self.min_n_components, self.max_n_components + 1):
+            param_count = num_components * num_components + 2 * num_components * len(self.X[0]) - 1
+            try:
+                model = GaussianHMM(n_components=num_components, covariance_type="diag", n_iter=1000,
+                                    random_state=self.random_state, verbose=False).fit(self.X, self.lengths)
+                logL = model.score(self.X, self.lengths)
+                bic = -2 * logL + param_count * math.log(len(self.X))
+            except ValueError:
+                logL = float("-inf")
+                bic = float("inf")
+            print("{} state count has {} logL and {} BIC".format(num_components, logL, bic))
+            if bic < best_bic:
+                best_bic = bic
+                best_model = model
+        return best_model
 
 
 class SelectorDIC(ModelSelector):
@@ -93,7 +109,21 @@ class SelectorDIC(ModelSelector):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
         # TODO implement model selection based on DIC scores
-        raise NotImplementedError
+        print("DIC train {} has {} sequences".format(self.this_word, len(self.sequences)))
+        best_dic = float("-inf")
+        for num_components in range(self.min_n_components, self.max_n_components + 1):
+            try:
+                model = GaussianHMM(n_components=num_components, covariance_type="diag", n_iter=1000,
+                                    random_state=self.random_state, verbose=False).fit(self.X, self.lengths)
+                logL = model.score(self.X, self.lengths)
+            except ValueError:
+                logL = float("-inf")
+                dic = float("-inf")
+            print("{} state count has {} logL and {} DIC".format(num_components, logL, dic))
+            if dic > best_dic:
+                best_dic = dic
+                best_model = model
+        return best_model
 
 class SelectorCV(ModelSelector):
     ''' select best model based on average log Likelihood of cross-validation folds
@@ -104,12 +134,12 @@ class SelectorCV(ModelSelector):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
         # TODO implement model selection using CV
-        max_components = min(len(min(self.sequences, key=len)),self.max_n_components)
-        print("Train {} has {} splits max {}".format(self.this_word, len(self.sequences), max_components))
+        #max_components = min(len(min(self.sequences, key=len)),self.max_n_components)
+        print("CV train {} has {} sequences".format(self.this_word, len(self.sequences)))
         best_logL = float("-inf")
-        for num_components in (self.min_n_components, max_components):
-            logL = 0
+        for num_components in range(self.min_n_components, self.max_n_components + 1):
             if len(self.sequences) == 1:
+                runCount = 1
                 try:
                     model = GaussianHMM(n_components=num_components, covariance_type="diag", n_iter=1000,
                                         random_state=self.random_state, verbose=False).fit(self.X, self.lengths)
@@ -117,7 +147,10 @@ class SelectorCV(ModelSelector):
                 except ValueError:
                     logL = float("-inf")
             else:
-                split_method = KFold(n_splits=min(3, len(self.sequences)))
+                #split_method = KFold(n_splits=min(math.ceil(math.sqrt(len(self.sequences))), 10))
+                split_method = KFold(n_splits=min(len(self.sequences), 10))
+                runCount = 0
+                logL = 0
                 for train_idx, test_idx in split_method.split(self.sequences):
                     try:
                         # print("Train fold indices:{} Test fold indices:{} for {}".format(cv_train_idx, cv_test_idx, self.this_word))
@@ -126,8 +159,15 @@ class SelectorCV(ModelSelector):
                                                 random_state=self.random_state, verbose=False).fit(train_X, train_lengths)
                         test_X, test_lengths = combine_sequences(test_idx, self.sequences)
                         logL = logL + model.score(test_X, test_lengths)
+                        runCount += 1
                     except ValueError:
-                        logL = float("-inf")
+                        print("Fail for {} state count".format(num_components))
+                        pass
+                if runCount == 0:
+                    logL = float("-inf")
+                else:
+                    logL = logL / runCount
+            print("{} state count has {} with {} loops".format(num_components, logL, runCount))
             if logL > best_logL:
                 best_logL = logL
                 best_model = model
