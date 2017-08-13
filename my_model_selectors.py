@@ -77,7 +77,7 @@ class SelectorBIC(ModelSelector):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
         # TODO implement model selection based on BIC scores
         #max_components = min(len(min(self.sequences, key=len)),self.max_n_components)
-        print("BIC train {} has {} sequences".format(self.this_word, len(self.sequences)))
+        print("BIC selector for {} has {} sequences".format(self.this_word, len(self.sequences)))
         best_bic = float("inf")
         for num_components in range(self.min_n_components, self.max_n_components + 1):
             param_count = num_components * num_components + 2 * num_components * len(self.X[0]) - 1
@@ -109,17 +109,31 @@ class SelectorDIC(ModelSelector):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
         # TODO implement model selection based on DIC scores
-        print("DIC train {} has {} sequences".format(self.this_word, len(self.sequences)))
+        print("DIC selector for {} has {} sequences".format(self.this_word, len(self.sequences)))
         best_dic = float("-inf")
         for num_components in range(self.min_n_components, self.max_n_components + 1):
-            try:
-                model = GaussianHMM(n_components=num_components, covariance_type="diag", n_iter=1000,
-                                    random_state=self.random_state, verbose=False).fit(self.X, self.lengths)
-                logL = model.score(self.X, self.lengths)
-            except ValueError:
-                logL = float("-inf")
-                dic = float("-inf")
-            print("{} state count has {} logL and {} DIC".format(num_components, logL, dic))
+            model = GaussianHMM(n_components=num_components, covariance_type="diag", n_iter=1000,
+                                random_state=self.random_state, verbose=False).fit(self.X, self.lengths)
+            otherWordCount = 0
+            otherLogL = 0
+            for other_word in self.words:
+                try:
+                    if other_word == self.this_word:
+                        logL = model.score(self.X, self.lengths)
+                    else:
+                        otherX, otherLengths = self.hwords[other_word]
+                        otherLogL = otherLogL + model.score(otherX, otherLengths)
+                        otherWordCount += 1
+                except ValueError:
+                    if other_word == self.this_word:
+                        logL = float("-inf")
+                        break
+            if otherWordCount == 0:
+                otherLogL = float("inf")
+            else:
+                otherLogL = otherLogL / otherWordCount
+            dic = logL - otherLogL
+            print("{} state count has {} logL and {} DIC from {} words".format(num_components, logL, dic, otherWordCount))
             if dic > best_dic:
                 best_dic = dic
                 best_model = model
@@ -135,7 +149,7 @@ class SelectorCV(ModelSelector):
 
         # TODO implement model selection using CV
         #max_components = min(len(min(self.sequences, key=len)),self.max_n_components)
-        print("CV train {} has {} sequences".format(self.this_word, len(self.sequences)))
+        print("CV selector for {} has {} sequences".format(self.this_word, len(self.sequences)))
         best_logL = float("-inf")
         for num_components in range(self.min_n_components, self.max_n_components + 1):
             if len(self.sequences) == 1:
