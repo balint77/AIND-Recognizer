@@ -7,7 +7,6 @@ from hmmlearn.hmm import GaussianHMM
 from sklearn.model_selection import KFold
 from asl_utils import combine_sequences
 
-
 class ModelSelector(object):
     '''
     base class for model selection (strategy design pattern)
@@ -26,7 +25,12 @@ class ModelSelector(object):
         self.min_n_components = min_n_components
         self.max_n_components = max_n_components
         self.random_state = random_state
-        self.verbose = verbose
+        if self.this_word == 'FIND':
+            self.verbose = True
+        else:
+            self.verbose = verbose
+        if self.verbose:
+            print("X {}, lengths {}".format(self.X, self.lengths))
 
     def select(self):
         raise NotImplementedError
@@ -77,19 +81,28 @@ class SelectorBIC(ModelSelector):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
         # TODO implement model selection based on BIC scores
         #max_components = min(len(min(self.sequences, key=len)),self.max_n_components)
-        print("BIC selector for {} has {} sequences".format(self.this_word, len(self.sequences)))
+        if self.verbose:
+            print("BIC selector for {} has {} sequences".format(self.this_word, len(self.sequences)))
         best_bic = float("inf")
+        best_model = None
         for num_components in range(self.min_n_components, self.max_n_components + 1):
             param_count = num_components * num_components + 2 * num_components * len(self.X[0]) - 1
             try:
                 model = GaussianHMM(n_components=num_components, covariance_type="diag", n_iter=1000,
                                     random_state=self.random_state, verbose=False).fit(self.X, self.lengths)
+                #if best_model is None:
+                #    best_model = model #have at least some result
+                if self.verbose:
+                    print("model done")
                 logL = model.score(self.X, self.lengths)
+                if self.verbose:
+                    print("scoring done")
                 bic = -2 * logL + param_count * math.log(len(self.X))
             except ValueError:
                 logL = float("-inf")
                 bic = float("inf")
-            print("{} state count has {} logL and {} BIC".format(num_components, logL, bic))
+            if self.verbose:
+                print("{} state count has {} logL and {} BIC".format(num_components, logL, bic))
             if bic < best_bic:
                 best_bic = bic
                 best_model = model
@@ -109,34 +122,40 @@ class SelectorDIC(ModelSelector):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
         # TODO implement model selection based on DIC scores
-        print("DIC selector for {} has {} sequences".format(self.this_word, len(self.sequences)))
+        if self.verbose:
+            print("DIC selector for {} has {} sequences".format(self.this_word, len(self.sequences)))
         best_dic = float("-inf")
+        best_model = None
         for num_components in range(self.min_n_components, self.max_n_components + 1):
-            model = GaussianHMM(n_components=num_components, covariance_type="diag", n_iter=1000,
-                                random_state=self.random_state, verbose=False).fit(self.X, self.lengths)
-            otherWordCount = 0
-            otherLogL = 0
-            for other_word in self.words:
-                try:
-                    if other_word == self.this_word:
-                        logL = model.score(self.X, self.lengths)
-                    else:
-                        otherX, otherLengths = self.hwords[other_word]
-                        otherLogL = otherLogL + model.score(otherX, otherLengths)
-                        otherWordCount += 1
-                except ValueError:
-                    if other_word == self.this_word:
-                        logL = float("-inf")
-                        break
-            if otherWordCount == 0:
-                otherLogL = float("inf")
-            else:
-                otherLogL = otherLogL / otherWordCount
-            dic = logL - otherLogL
-            print("{} state count has {} logL and {} DIC from {} words".format(num_components, logL, dic, otherWordCount))
-            if dic > best_dic:
-                best_dic = dic
-                best_model = model
+            try:
+                model = GaussianHMM(n_components=num_components, covariance_type="diag", n_iter=1000,
+                                    random_state=self.random_state, verbose=False).fit(self.X, self.lengths)
+                otherWordCount = 0
+                otherLogL = 0
+                for other_word in self.words:
+                    try:
+                        if other_word == self.this_word:
+                            logL = model.score(self.X, self.lengths)
+                        else:
+                            otherX, otherLengths = self.hwords[other_word]
+                            otherLogL = otherLogL + model.score(otherX, otherLengths)
+                            otherWordCount += 1
+                    except ValueError:
+                        if other_word == self.this_word:
+                            logL = float("-inf")
+                            break
+                if otherWordCount == 0:
+                    otherLogL = float("inf")
+                else:
+                    otherLogL = otherLogL / otherWordCount
+                dic = logL - otherLogL
+                if self.verbose:
+                    print("{} state count has {} logL and {} DIC from {} words".format(num_components, logL, dic, otherWordCount))
+                if dic > best_dic:
+                    best_dic = dic
+                    best_model = model
+            except ValueError:
+                pass
         return best_model
 
 class SelectorCV(ModelSelector):
@@ -149,8 +168,10 @@ class SelectorCV(ModelSelector):
 
         # TODO implement model selection using CV
         #max_components = min(len(min(self.sequences, key=len)),self.max_n_components)
-        print("CV selector for {} has {} sequences".format(self.this_word, len(self.sequences)))
+        if self.verbose:
+            print("CV selector for {} has {} sequences".format(self.this_word, len(self.sequences)))
         best_logL = float("-inf")
+        best_model = None
         for num_components in range(self.min_n_components, self.max_n_components + 1):
             if len(self.sequences) == 1:
                 runCount = 1
@@ -175,13 +196,14 @@ class SelectorCV(ModelSelector):
                         logL = logL + model.score(test_X, test_lengths)
                         runCount += 1
                     except ValueError:
-                        print("Fail for {} state count".format(num_components))
+                        #print("Fail for {} state count".format(num_components))
                         pass
                 if runCount == 0:
                     logL = float("-inf")
                 else:
                     logL = logL / runCount
-            print("{} state count has {} with {} loops".format(num_components, logL, runCount))
+            if self.verbose:
+                print("{} state count has {} with {} loops".format(num_components, logL, runCount))
             if logL > best_logL:
                 best_logL = logL
                 best_model = model
