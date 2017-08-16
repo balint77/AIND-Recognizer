@@ -25,10 +25,7 @@ class ModelSelector(object):
         self.min_n_components = min_n_components
         self.max_n_components = max_n_components
         self.random_state = random_state
-        if self.this_word == 'FIND':
-            self.verbose = True
-        else:
-            self.verbose = verbose
+        self.verbose = verbose
         if self.verbose:
             print("X {}, lengths {}".format(self.X, self.lengths))
 
